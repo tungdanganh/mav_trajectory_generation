@@ -140,6 +140,11 @@ std::vector<double> estimateSegmentTimesNfabian(
     const Vertex::Vector& vertices, double v_max, double a_max,
     double magic_fabian_constant = 6.5);
 
+// Estimate the time based on max velocity only and relaxed it by a factor.
+std::vector<double> estimateSegmentTimesVelBased(const Vertex::Vector& vertices,
+                                                double v_max, double a_max,
+                                                double relax_factor);
+
 double computeTimeVelocityRamp(const Eigen::VectorXd& start,
                                const Eigen::VectorXd& goal, double v_max,
                                double a_max);
