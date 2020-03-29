@@ -19,6 +19,10 @@ ExamplePlanner::ExamplePlanner(ros::NodeHandle& nh) :
   pub_markers_ =
       nh.advertise<visualization_msgs::MarkerArray>("trajectory_markers", 0);
 
+  // create publisher for RVIZ markers
+  pub_vertices_markers_ =
+      nh.advertise<visualization_msgs::MarkerArray>("vertices_markers", 0);
+
   pub_trajectory_ =
       nh.advertise<mav_planning_msgs::PolynomialTrajectory4D>("trajectory",
                                                               0);
@@ -48,7 +52,6 @@ void ExamplePlanner::setMaxSpeed(const double max_v) {
 bool ExamplePlanner::planTrajectory(const Eigen::VectorXd& goal_pos,
                                     const Eigen::VectorXd& goal_vel,
                                     mav_trajectory_generation::Trajectory* trajectory) {
-
 
   // 3 Dimensional trajectory => through carteisan space, no orientation
   const int dimension = 3;
@@ -129,8 +132,12 @@ bool ExamplePlanner::publishTrajectory(const mav_trajectory_generation::Trajecto
                                                &markers);
   pub_markers_.publish(markers);
 
+  visualization_msgs::MarkerArray vertices_markers;
+  mav_trajectory_generation::drawVerticesFromTrajectory(trajectory, frame_id, &vertices_markers);
+  pub_vertices_markers_.publish(vertices_markers);
+
   // send trajectory to be executed on UAV
-  mav_planning_msgs::PolynomialTrajectory msg;
+  mav_planning_msgs::PolynomialTrajectory4D msg;
   mav_trajectory_generation::trajectoryToPolynomialTrajectoryMsg(trajectory,
                                                                  &msg);
   msg.header.frame_id = "world";

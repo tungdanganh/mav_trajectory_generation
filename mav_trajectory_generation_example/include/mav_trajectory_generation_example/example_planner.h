@@ -37,6 +37,7 @@ class ExamplePlanner {
   ros::Publisher pub_markers_;
   ros::Publisher pub_trajectory_;
   ros::Subscriber sub_odom_;
+  ros::Publisher pub_vertices_markers_;
 
   ros::NodeHandle& nh_;
   Eigen::Affine3d current_pose_;
