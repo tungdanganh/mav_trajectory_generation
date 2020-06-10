@@ -1,3 +1,4 @@
+#include <mav_trajectory_generation/polynomial_optimization_nonlinear.h>
 #include <gbplanner_trajopt/gbplanner_trajopt.h>
 
 GbplannerTrajOpt::GbplannerTrajOpt(const ros::NodeHandle& nh):
@@ -46,12 +47,25 @@ std::vector<geometry_msgs::Pose> GbplannerTrajOpt::smoothPath(
   }
 
   // Convert to pose
+  // std::vector<geometry_msgs::Pose> line_path_new;
+  // for (int i = 0; i < line_path_vec_intp_cleaned.size(); ++i) {
+  //   geometry_msgs::Pose pose;
+  //   pose.position.x = line_path_vec_intp_cleaned[i].x();
+  //   pose.position.y = line_path_vec_intp_cleaned[i].y();
+  //   pose.position.z = line_path_vec_intp_cleaned[i].z();
+  //   pose.orientation.x = 0;
+  //   pose.orientation.y = 0;
+  //   pose.orientation.z = 0;
+  //   pose.orientation.w = 1;
+  //   line_path_new.push_back(pose);
+  // }
+
   std::vector<geometry_msgs::Pose> line_path_new;
-  for (int i = 0; i < line_path_vec_intp_cleaned.size(); ++i) {
+  for (int i = 0; i < line_path_vec_edited.size(); ++i) {
     geometry_msgs::Pose pose;
-    pose.position.x = line_path_vec_intp_cleaned[i].x();
-    pose.position.y = line_path_vec_intp_cleaned[i].y();
-    pose.position.z = line_path_vec_intp_cleaned[i].z();
+    pose.position.x = line_path_vec_edited[i].x();
+    pose.position.y = line_path_vec_edited[i].y();
+    pose.position.z = line_path_vec_edited[i].z();
     pose.orientation.x = 0;
     pose.orientation.y = 0;
     pose.orientation.z = 0;
@@ -72,7 +86,7 @@ std::vector<geometry_msgs::Pose> GbplannerTrajOpt::smoothPath(
   trajectory_msgs::MultiDOFJointTrajectory msg_pub;
   double dt = 0.2;
 
-  int n_max = 10;
+  int n_max = 5;
   while ((--n_max > 0) && (!stop_opt)) {
     // Optimize
     if (optimizeTrajectory(line_path_new, &trajectory)) {
@@ -88,14 +102,12 @@ std::vector<geometry_msgs::Pose> GbplannerTrajOpt::smoothPath(
       double time_from_start = 0;
       const double kEpsilon = 0.001;
       int bad_segment = 0;
-      std::cout << std::endl;
       for (int i = 0; i < segment_times.size(); ++i) {
         sampleTrajectoryInRange(traj, time_from_start, time_from_start + segment_times[i] - kEpsilon, dt, &traj_points);
         time_from_start += segment_times[i];
         // mav_trajectory_generation::sampleWholeTrajectory(traj, dt, &traj_points);
         mav_msgs::msgMultiDofJointTrajectoryFromEigen(traj_points, &msg_pub);
 
-        // std::cout << msg_pub.points.size() << "/" << msg_pub.points[0].transforms.size() << std::endl;
         auto p1 = msg_pub.points[0].transforms[0];
         Eigen::Vector3d p_start(p1.translation.x, p1.translation.y, p1.translation.z);
         for (int i = 1; i < msg_pub.points.size(); ++i) {
@@ -105,7 +117,6 @@ std::vector<geometry_msgs::Pose> GbplannerTrajOpt::smoothPath(
           if (d_diff < 0.1)
             continue;
           if (isCollision(p_end)) {
-            std::cout << p_start << p_end << std::endl;
             path_free = false;
             break;
           }
@@ -157,7 +168,7 @@ std::vector<geometry_msgs::Pose> GbplannerTrajOpt::smoothPath(
     }
     return res;
   } else {
-    return line_path;
+    return line_path_new; //line_path;
   }
 }
 
@@ -165,8 +176,8 @@ bool GbplannerTrajOpt::optimizeTrajectory(
     const std::vector<geometry_msgs::Pose>& path,
     mav_trajectory_generation::Trajectory* trajectory) {
   clock_t time_start = clock();
-  if (path.size() < 3) return false;
-
+  if (path.size() < 2) return false; // at least start + end point
+  ROS_WARN("Optimizing a path with %d segments.", (int)path.size());
   const int dimension = 3;
 
   // Array for all waypoints and their constrains
@@ -178,32 +189,35 @@ bool GbplannerTrajOpt::optimizeTrajectory(
 
   mav_trajectory_generation::Vertex start(dimension), end(dimension);
 
-  // start.makeStartOrEnd(Eigen::Vector3d(path[0].position.x, path[0].position.y, path[0].position.z+z_control_offset), derivative_to_optimize);
-  // start.addConstraint(mav_trajectory_generation::derivative_order::VELOCITY, 0);
-  double z_control_offset = 0;// 0.2; //for sim
-  start.addConstraint(mav_trajectory_generation::derivative_order::POSITION,
-                        Eigen::Vector3d(path[0].position.x, path[0].position.y, path[0].position.z+z_control_offset));
-
+  if (path.size() == 2) {
+    start.makeStartOrEnd(Eigen::Vector3d(path[0].position.x, path[0].position.y, path[0].position.z), derivative_to_optimize);
+    start.addConstraint(mav_trajectory_generation::derivative_order::VELOCITY, 0);
+  } else {
+    start.addConstraint(mav_trajectory_generation::derivative_order::POSITION,
+                          Eigen::Vector3d(path[0].position.x, path[0].position.y, path[0].position.z));
+  }
   vertices.push_back(start);
 
   // intermidiate points
   for (int i = 1; i < path.size()-1; ++i) {
     mav_trajectory_generation::Vertex middle(dimension);
     middle.addConstraint(mav_trajectory_generation::derivative_order::POSITION,
-                        Eigen::Vector3d(path[i].position.x, path[i].position.y, path[i].position.z+z_control_offset));
+                        Eigen::Vector3d(path[i].position.x, path[i].position.y, path[i].position.z));
     vertices.push_back(middle);
   }
 
   /******* Configure end point *******/
-  // end.makeStartOrEnd(Eigen::Vector3d(path.back().position.x, path.back().position.y, path.back().position.z+z_control_offset),
-  //                    derivative_to_optimize);
-  // end.addConstraint(mav_trajectory_generation::derivative_order::VELOCITY, 0);
-  end.addConstraint(mav_trajectory_generation::derivative_order::POSITION,
-                       Eigen::Vector3d(path.back().position.x, path.back().position.y, path.back().position.z+z_control_offset));
-
+  if (path.size() == 2) {
+    end.makeStartOrEnd(Eigen::Vector3d(path.back().position.x, path.back().position.y, path.back().position.z),
+                     derivative_to_optimize);
+    end.addConstraint(mav_trajectory_generation::derivative_order::VELOCITY, 0);
+  } else {
+    end.addConstraint(mav_trajectory_generation::derivative_order::POSITION,
+                       Eigen::Vector3d(path.back().position.x, path.back().position.y, path.back().position.z));
+  }
   vertices.push_back(end);
 
-  // setimate initial segment times
+  // estimate initial segment times
   std::vector<double> segment_times;
   const double max_a_ = 1.0;
   const double max_v_= 1.0;
@@ -222,12 +236,15 @@ bool GbplannerTrajOpt::optimizeTrajectory(
   opt.addMaximumMagnitudeConstraint(mav_trajectory_generation::derivative_order::ACCELERATION, max_a_);
 
   // solve trajectory
-  opt.optimize();
+  nlopt::result opt_status = (nlopt::result)opt.optimize();
 
   // get trajectory as polynomial parameters
   opt.getTrajectory(&(*trajectory));
-  std::cout << "Time cost for the Opt: " << ((double)(clock() - time_start)) / CLOCKS_PER_SEC << std::endl;
-  return true;
+  ROS_INFO("Opt time [%s]: %f (sec)",
+           (opt_status != nlopt::FAILURE) ? "SUCCESS" : "FAILED",
+           ((double)(clock() - time_start)) / CLOCKS_PER_SEC);
+  if (opt_status != nlopt::FAILURE) return true;
+  return false;
 }
 
 void GbplannerTrajOpt::publishTrajectory(
