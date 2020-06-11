@@ -27,7 +27,7 @@ std::vector<geometry_msgs::Pose> GbplannerTrajOpt::smoothPath(
       line_path_vec_edited.push_back(line_path_vec[i-1]);
   }
   line_path_vec_edited.push_back(line_path_vec.back());
-  
+
   // Interpolate
   // std::vector<Eigen::Vector3d> line_path_vec_intp;
   // const double kIntpLen = 1.0; //m
@@ -117,8 +117,9 @@ std::vector<geometry_msgs::Pose> GbplannerTrajOpt::smoothPath(
 
       double time_from_start = 0;
       const double kEpsilon = 0.001;
-      int bad_segment = 0;
+      std::vector<int> bad_segments;
       for (int i = 0; i < segment_times.size(); ++i) {
+        path_free = true;
         sampleTrajectoryInRange(traj, time_from_start, time_from_start + segment_times[i] - kEpsilon, dt, &traj_points);
         time_from_start += segment_times[i];
         // mav_trajectory_generation::sampleWholeTrajectory(traj, dt, &traj_points);
@@ -139,34 +140,42 @@ std::vector<geometry_msgs::Pose> GbplannerTrajOpt::smoothPath(
           p_start = p_end;
         }
         if (!path_free) {
-          bad_segment = i;
-          break;
+          bad_segments.push_back(i);
+          // break;
         }
       }
 
-      if (path_free) {
+      if (bad_segments.empty()) {
         // Good to go.
         ROS_WARN("Collision free -->  execute this path.");
         stop_opt = true;
       } else {
         //
-        ROS_WARN("Collision detected --> continue to refine.");
-        // add a middle point
-        geometry_msgs::Pose pose;
-        pose.position.x = 0.5*(line_path_new[bad_segment].position.x + line_path_new[bad_segment+1].position.x);
-        pose.position.y = 0.5*(line_path_new[bad_segment].position.y + line_path_new[bad_segment+1].position.y);
-        pose.position.z = 0.5*(line_path_new[bad_segment].position.z + line_path_new[bad_segment+1].position.z);
-        pose.orientation.x = 0;
-        pose.orientation.y = 0;
-        pose.orientation.z = 0;
-        pose.orientation.w = 1;
-        line_path_new.insert(line_path_new.begin() + bad_segment + 1, pose);
+        ROS_WARN("Collision detected --> continue to refine by adding middle point.");
+        int offset = 0;
+        std::vector<geometry_msgs::Pose> line_path_mid = line_path_new;
+        for (int i = 0; i < bad_segments.size(); ++i) {
+          int bad_segment = bad_segments[i];
+          // add a middle point
+          geometry_msgs::Pose pose;
+          pose.position.x = 0.5*(line_path_new[bad_segment].position.x + line_path_new[bad_segment+1].position.x);
+          pose.position.y = 0.5*(line_path_new[bad_segment].position.y + line_path_new[bad_segment+1].position.y);
+          pose.position.z = 0.5*(line_path_new[bad_segment].position.z + line_path_new[bad_segment+1].position.z);
+          pose.orientation.x = 0;
+          pose.orientation.y = 0;
+          pose.orientation.z = 0;
+          pose.orientation.w = 1;
+          line_path_mid.insert(line_path_mid.begin() + bad_segment + 1 + offset, pose);
+          ++offset;
+        }
+        line_path_new = line_path_mid;
       }
       publishTrajectory(trajectory);
     }
   }
 
   if (stop_opt) {
+    ROS_WARN("Execute the optimized path.");
     mav_trajectory_generation::sampleWholeTrajectory(traj, dt, &traj_points);
     mav_msgs::msgMultiDofJointTrajectoryFromEigen(traj_points, &msg_pub);
     std::vector<geometry_msgs::Pose> res;
@@ -184,6 +193,7 @@ std::vector<geometry_msgs::Pose> GbplannerTrajOpt::smoothPath(
     }
     return res;
   } else {
+    ROS_WARN("Execute the pruned path.");
     return line_path_new; //line_path;
   }
 }
