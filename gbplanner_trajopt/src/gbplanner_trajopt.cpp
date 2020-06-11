@@ -89,7 +89,7 @@ std::vector<geometry_msgs::Pose> GbplannerTrajOpt::smoothPath(
     line_path_new.push_back(pose);
   }
 
-  // std::vector<geometry_msgs::Pose> line_path_new = line_path;
+  std::vector<geometry_msgs::Pose> line_path_pruned = line_path_new;
 
   ROS_WARN("Path before pruning [%d], after pruning [%d], after interpolating [%d]",
               line_path.size(), line_path_vec_edited.size(), line_path_vec_intp_cleaned.size());
@@ -102,8 +102,13 @@ std::vector<geometry_msgs::Pose> GbplannerTrajOpt::smoothPath(
   trajectory_msgs::MultiDOFJointTrajectory msg_pub;
   double dt = 0.2;
 
+  clock_t time_start = clock();
+  const double kMaxOptTime = 10;
+  double time_cost = ((double)(clock() - time_start)) / CLOCKS_PER_SEC;
+
   int n_max = 5;
-  while ((--n_max > 0) && (!stop_opt)) {
+  while ((--n_max > 0) && (!stop_opt) && (time_cost < kMaxOptTime)) {
+    time_cost = ((double)(clock() - time_start)) / CLOCKS_PER_SEC;
     // Optimize
     if (optimizeTrajectory(line_path_new, &trajectory)) {
       // Collision check
@@ -168,6 +173,7 @@ std::vector<geometry_msgs::Pose> GbplannerTrajOpt::smoothPath(
           line_path_mid.insert(line_path_mid.begin() + bad_segment + 1 + offset, pose);
           ++offset;
         }
+        if (line_path_mid.size() > 30) break;
         line_path_new = line_path_mid;
       }
       publishTrajectory(trajectory);
@@ -194,7 +200,7 @@ std::vector<geometry_msgs::Pose> GbplannerTrajOpt::smoothPath(
     return res;
   } else {
     ROS_WARN("Execute the pruned path.");
-    return line_path_new; //line_path;
+    return line_path_pruned;
   }
 }
 
