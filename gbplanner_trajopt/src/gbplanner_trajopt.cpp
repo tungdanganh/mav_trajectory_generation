@@ -27,24 +27,25 @@ std::vector<geometry_msgs::Pose> GbplannerTrajOpt::smoothPath(
       line_path_vec_edited.push_back(line_path_vec[i-1]);
   }
   line_path_vec_edited.push_back(line_path_vec.back());
+  
   // Interpolate
-  std::vector<Eigen::Vector3d> line_path_vec_intp;
-  const double kIntpLen = 1.0; //m
-  interpolatePath(line_path_vec_edited, kIntpLen, line_path_vec_intp);
-  // Prune very short segments due to interpolation.
-  std::vector<Eigen::Vector3d> line_path_vec_intp_cleaned;
-  const double kSegmentLenMin = 0.1;
-  line_path_vec_intp_cleaned.push_back(line_path_vec_intp[0]);
-  Eigen::Vector3d prev_vec;
-  prev_vec = line_path_vec_intp[0];
-  for (int i = 1; i < line_path_vec_intp.size(); ++i) {
-    Eigen::Vector3d vec = line_path_vec_intp[i] - prev_vec;
-    double segment_len = vec.norm();
-    if (std::abs(segment_len) > kSegmentLenMin) {
-      line_path_vec_intp_cleaned.push_back(line_path_vec_intp[i]);
-      prev_vec = line_path_vec_intp[i];
-    }
-  }
+  // std::vector<Eigen::Vector3d> line_path_vec_intp;
+  // const double kIntpLen = 1.0; //m
+  // interpolatePath(line_path_vec_edited, kIntpLen, line_path_vec_intp);
+  // // Prune very short segments due to interpolation.
+  // std::vector<Eigen::Vector3d> line_path_vec_intp_cleaned;
+  // const double kSegmentLenMin = 0.1;
+  // line_path_vec_intp_cleaned.push_back(line_path_vec_intp[0]);
+  // Eigen::Vector3d prev_vec;
+  // prev_vec = line_path_vec_intp[0];
+  // for (int i = 1; i < line_path_vec_intp.size(); ++i) {
+  //   Eigen::Vector3d vec = line_path_vec_intp[i] - prev_vec;
+  //   double segment_len = vec.norm();
+  //   if (std::abs(segment_len) > kSegmentLenMin) {
+  //     line_path_vec_intp_cleaned.push_back(line_path_vec_intp[i]);
+  //     prev_vec = line_path_vec_intp[i];
+  //   }
+  // }
 
   // Convert to pose
   // std::vector<geometry_msgs::Pose> line_path_new;
@@ -60,12 +61,27 @@ std::vector<geometry_msgs::Pose> GbplannerTrajOpt::smoothPath(
   //   line_path_new.push_back(pose);
   // }
 
+  // Prune very short segments due to interpolation.
+  std::vector<Eigen::Vector3d> line_path_vec_intp_cleaned;
+  const double kSegmentLenMin = 0.1;
+  line_path_vec_intp_cleaned.push_back(line_path_vec_edited[0]);
+  Eigen::Vector3d prev_vec;
+  prev_vec = line_path_vec_edited[0];
+  for (int i = 1; i < line_path_vec_edited.size(); ++i) {
+    Eigen::Vector3d vec = line_path_vec_edited[i] - prev_vec;
+    double segment_len = vec.norm();
+    if (std::abs(segment_len) > kSegmentLenMin) {
+      line_path_vec_intp_cleaned.push_back(line_path_vec_edited[i]);
+      prev_vec = line_path_vec_edited[i];
+    }
+  }
+
   std::vector<geometry_msgs::Pose> line_path_new;
-  for (int i = 0; i < line_path_vec_edited.size(); ++i) {
+  for (int i = 0; i < line_path_vec_intp_cleaned.size(); ++i) {
     geometry_msgs::Pose pose;
-    pose.position.x = line_path_vec_edited[i].x();
-    pose.position.y = line_path_vec_edited[i].y();
-    pose.position.z = line_path_vec_edited[i].z();
+    pose.position.x = line_path_vec_intp_cleaned[i].x();
+    pose.position.y = line_path_vec_intp_cleaned[i].y();
+    pose.position.z = line_path_vec_intp_cleaned[i].z();
     pose.orientation.x = 0;
     pose.orientation.y = 0;
     pose.orientation.z = 0;
@@ -75,7 +91,7 @@ std::vector<geometry_msgs::Pose> GbplannerTrajOpt::smoothPath(
 
   // std::vector<geometry_msgs::Pose> line_path_new = line_path;
 
-  ROS_WARN("Global path before pruning [%d], after pruning [%d], after interpolating [%d]",
+  ROS_WARN("Path before pruning [%d], after pruning [%d], after interpolating [%d]",
               line_path.size(), line_path_vec_edited.size(), line_path_vec_intp_cleaned.size());
 
   // Optimize loop
